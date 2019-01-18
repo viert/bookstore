@@ -3,6 +3,8 @@ package web
 import (
 	"net/http"
 
+	"github.com/gorilla/mux"
+
 	"github.com/viert/bookstore/config"
 	"github.com/viert/bookstore/storage"
 )
@@ -47,6 +49,9 @@ func NewServer(storage *storage.Storage, cfg config.ServerCfg) *Server {
 // Start creates and configures a http server with all necessary handlers,
 // then starts ListenAndServe in background and returns the server
 func (s *Server) Start() *http.Server {
+	r := mux.NewRouter()
+	r.HandleFunc("/api/v1/info", jsonResponse(infoHandler))
+
 	srv := &http.Server{
 		Addr: s.bind,
 	}
