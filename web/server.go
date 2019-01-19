@@ -50,7 +50,14 @@ func NewServer(storage *storage.Storage, cfg *config.ServerCfg) *Server {
 // then starts ListenAndServe in background and returns the server
 func (s *Server) Start() *http.Server {
 	r := mux.NewRouter()
-	r.HandleFunc("/api/v1/info", jsonResponse(infoHandler))
+	r.HandleFunc("/api/v1/info", s.jsonResponse(appInfo))
+	r.HandleFunc("/api/v1/data/get/{id}", s.jsonResponse(getData)).Methods("GET")
+
+	if s.role == roleMaster {
+		r.HandleFunc("/api/v1/data/append", s.jsonResponse(appendData)).Methods("POST")
+	} else {
+		r.HandleFunc("/api/v1/data/set/{id}", s.jsonResponse(setData)).Methods("POST")
+	}
 
 	srv := &http.Server{
 		Addr:    s.bind,

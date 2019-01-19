@@ -14,16 +14,16 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-type dataHandler func(*http.Request) (interface{}, error)
+type dataHandler func(*http.Request, *Server) (interface{}, error)
 
 func (he *httpError) Error() string {
 	return he.msg
 }
 
-func jsonResponse(handler dataHandler) http.HandlerFunc {
+func (s *Server) jsonResponse(handler dataHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		responseData, err := handler(r)
+		responseData, err := handler(r, s)
 		if err != nil {
 			if he, ok := err.(*httpError); ok {
 				data, err := json.Marshal(&errorResponse{Error: he.msg})

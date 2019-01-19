@@ -203,10 +203,11 @@ func (s *Storage) readRaw(idx int) (*bytes.Buffer, error) {
 	defer s.locker.RUnlock()
 
 	for {
-		pos := s.getChunkPosition(idx)
-		if pos < 0 {
+		if idx >= int(s.header.FreeChunkIdx) || idx < 0 {
 			return nil, fmt.Errorf("index out of bounds")
 		}
+
+		pos := s.getChunkPosition(idx)
 
 		// reading chunk header
 		_, err = s.backend.ReadAt(headerBytes, int64(pos))

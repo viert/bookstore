@@ -52,5 +52,6 @@ func ReadServerConfig(r io.Reader) (*ServerCfg, error) {
 			return nil, fmt.Errorf("error reading replica.host: %s", err)
 		}
 	}
+
 	return cfg, nil
 }
