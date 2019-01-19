@@ -109,7 +109,7 @@ func appendData(r *http.Request, s *Server) (interface{}, error) {
 		return nil, err
 	}
 
-	idx, err := s.storage.Write([]byte(input.Data))
+	idx, err := s.storage.Write([]byte(input.Data), func(idx int) error { return nil })
 	if err != nil {
 		return nil, &httpError{
 			msg:  fmt.Sprintf("error writing data to storage: %s", err),

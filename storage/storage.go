@@ -27,6 +27,11 @@ type Storage struct {
 	locker  sync.RWMutex
 }
 
+// ReplicationCallback represents a function type for
+// replication mechanics. This is made as a callback because
+// the local commit must depend on the result of replication
+type ReplicationCallback func(idx int) error
+
 // Open initializes a Storage instance from a given backend (typically a rw-opened file)
 func Open(backend Backend) (*Storage, error) {
 	s := new(Storage)
@@ -101,7 +106,7 @@ func unzip(data *bytes.Buffer) ([]byte, error) {
 	return out, nil
 }
 
-func (s *Storage) writeTo(buf *bytes.Buffer, idx int) (int, error) {
+func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallback) (int, error) {
 	var header chunkHeader
 	var headerBuffer bytes.Buffer
 	var bytesToWrite int
@@ -159,6 +164,15 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int) (int, error) {
 		freeChunk++
 	}
 
+	if callback != nil {
+		err = callback(idx)
+		// replication is kinda atomic. so if it fails, local write
+		// must fail as well
+		if err != nil {
+			return -1, fmt.Errorf("replication error: %s", err)
+		}
+	}
+
 	s.header.FreeChunkIdx = int32(freeChunk)
 	err = s.writeHeader()
 	if err != nil {
@@ -177,12 +191,12 @@ func (s *Storage) WriteTo(data []byte, idx int) (int, error) {
 	}
 	s.locker.Lock()
 	defer s.locker.Unlock()
-	return s.writeTo(buf, idx)
+	return s.writeTo(buf, idx, nil)
 }
 
 // Write writes data into free chunks of storage
 // and returns index of the starting chunk
-func (s *Storage) Write(data []byte) (int, error) {
+func (s *Storage) Write(data []byte, callback ReplicationCallback) (int, error) {
 	buf, err := zip(data)
 	if err != nil {
 		return -1, err
@@ -190,7 +204,7 @@ func (s *Storage) Write(data []byte) (int, error) {
 	s.locker.Lock()
 	defer s.locker.Unlock()
 	idx := int(s.header.FreeChunkIdx)
-	return s.writeTo(buf, idx)
+	return s.writeTo(buf, idx, callback)
 }
 
 func (s *Storage) readRaw(idx int) (*bytes.Buffer, error) {

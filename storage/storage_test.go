@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -66,6 +67,14 @@ func TestBackend(t *testing.T) {
 	}
 }
 
+func replicationSucceeded(idx int) error {
+	return nil
+}
+
+func replicationFailed(idx int) error {
+	return fmt.Errorf("replication error")
+}
+
 func TestStore(t *testing.T) {
 	mb := NewMemBackend()
 	CreateStorage(mb, 512, 512)
@@ -75,7 +84,7 @@ func TestStore(t *testing.T) {
 	}
 
 	// writing short data
-	i, err := st.Write(shortData)
+	i, err := st.Write(shortData, replicationSucceeded)
 	if err != nil {
 		t.Error(err)
 	}
@@ -89,7 +98,7 @@ func TestStore(t *testing.T) {
 	}
 
 	// writing long data
-	j, err := st.Write(longData)
+	j, err := st.Write(longData, replicationSucceeded)
 	if err != nil {
 		t.Error(err)
 	}
@@ -126,4 +135,54 @@ func TestStore(t *testing.T) {
 	if err == nil {
 		t.Errorf("reading at position %d should cause an error", j+2)
 	}
+}
+
+func TestReplication(t *testing.T) {
+	replicationCalled := false
+
+	mb := NewMemBackend()
+	CreateStorage(mb, 512, 512)
+	st, err := Open(mb)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// writing short data
+	i, err := st.Write(shortData, func(idx int) error {
+		replicationCalled = true
+		if idx != 0 {
+			t.Errorf("index of replicated item must be 0, got %d instead", idx)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	if !replicationCalled {
+		t.Errorf("replication callback wasn't called")
+	}
+
+	if i != 0 {
+		t.Errorf("write idx is expected to be 0, got %d instead", i)
+	}
+
+	if st.header.FreeChunkIdx != 1 {
+		t.Errorf("next free idx is expected to be 1, got %d instead", st.header.FreeChunkIdx)
+	}
+
+	replicationCalled = false
+	// writing short data
+	_, err = st.Write(longData, func(idx int) error {
+		replicationCalled = true
+		if idx != 1 {
+			t.Errorf("index of replicated item must be 1, got %d instead", idx)
+		}
+		return fmt.Errorf("replication failed")
+	})
+
+	if err == nil {
+		t.Error(err)
+	}
+
 }
