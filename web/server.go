@@ -27,7 +27,7 @@ type Server struct {
 
 // NewServer creates and configures a new Server instance
 // based on a given underlying storage
-func NewServer(storage *storage.Storage, cfg config.ServerCfg) *Server {
+func NewServer(storage *storage.Storage, cfg *config.ServerCfg) *Server {
 	s := &Server{
 		bind:      cfg.Bind,
 		storage:   storage,
@@ -53,7 +53,8 @@ func (s *Server) Start() *http.Server {
 	r.HandleFunc("/api/v1/info", jsonResponse(infoHandler))
 
 	srv := &http.Server{
-		Addr: s.bind,
+		Addr:    s.bind,
+		Handler: r,
 	}
 
 	go func() {

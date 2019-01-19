@@ -11,3 +11,12 @@ type infoResponse struct {
 func infoHandler(r *http.Request) (interface{}, error) {
 	return &infoResponse{AppName: "bookstore"}, nil
 }
+
+type DataItem struct {
+	ID   int    `json:"id"`
+	Data string `json:"data"`
+}
+
+type DataListResponse struct {
+	Items []DataItem `json:"items"`
+}

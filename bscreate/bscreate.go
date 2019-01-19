@@ -16,9 +16,9 @@ var (
 )
 
 func main() {
-	flag.StringVar(&storeFilename, "-f", "", "storage filename to create")
-	flag.IntVar(&chunkCount, "-c", 0, "number of chunks")
-	flag.IntVar(&chunkSize, "-s", 0, "chunk size")
+	flag.StringVar(&storeFilename, "f", "", "storage filename to create")
+	flag.IntVar(&chunkCount, "c", 0, "number of chunks")
+	flag.IntVar(&chunkSize, "s", 0, "chunk size")
 	flag.Parse()
 
 	if storeFilename == "" {
@@ -43,7 +43,7 @@ func main() {
 		log.Fatalln("file already exists")
 	}
 
-	f, err := os.OpenFile(storeFilename, os.O_RDWR, 0644)
+	f, err := os.OpenFile(storeFilename, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Fatalf("error creating file: %s", err)
 	}
