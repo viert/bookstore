@@ -6,6 +6,7 @@ import (
 )
 
 type storeHeader struct {
+	StorageID    uint64
 	Version      int32
 	ChunkSize    int32
 	NumChunks    int32

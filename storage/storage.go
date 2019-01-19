@@ -261,3 +261,8 @@ func (s *Storage) Read(idx int) ([]byte, error) {
 	}
 	return unzip(buf)
 }
+
+// GetID returns storage ID from storage file header
+func (s *Storage) GetID() uint64 {
+	return s.header.StorageID
+}

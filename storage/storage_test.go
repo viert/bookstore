@@ -60,7 +60,7 @@ func (mb *MemBackend) Write(p []byte) (n int, err error) {
 
 func TestBackend(t *testing.T) {
 	mb := NewMemBackend()
-	CreateStorage(mb, 512, 512)
+	CreateStorage(mb, 512, 512, 0)
 	expectedLen := storeHeaderSize + 512*(chunkHeaderSize+512)
 	if len(mb.data) != expectedLen {
 		t.Errorf("data len is expected to be %d, got %d instead", expectedLen, len(mb.data))
@@ -77,7 +77,7 @@ func replicationFailed(idx int) error {
 
 func TestStore(t *testing.T) {
 	mb := NewMemBackend()
-	CreateStorage(mb, 512, 512)
+	CreateStorage(mb, 512, 512, 0)
 	st, err := Open(mb)
 	if err != nil {
 		t.Error(err)

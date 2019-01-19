@@ -13,7 +13,6 @@ type ServerCfg struct {
 	IsMaster        bool
 	ReplicateTo     string
 	StorageFileName string
-	StorageID       string
 }
 
 // ReadServerConfig reads and returns a bookstore config
@@ -39,11 +38,6 @@ func ReadServerConfig(r io.Reader) (*ServerCfg, error) {
 	cfg.StorageFileName, err = p.GetString("storage.file")
 	if err != nil {
 		return nil, fmt.Errorf("error reading storage.file: %s", err)
-	}
-
-	cfg.StorageID, err = p.GetString("storage.id")
-	if err != nil {
-		return nil, fmt.Errorf("error reading storage.id: %s", err)
 	}
 
 	if p.KeyExists("replica.host") {
