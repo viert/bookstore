@@ -294,18 +294,22 @@ func (s *Storage) GetID() uint64 {
 	return s.header.StorageID
 }
 
+// GetChunkSize returns chunk size from storage file header
 func (s *Storage) GetChunkSize() int {
 	return int(s.header.ChunkSize)
 }
 
+// GetNumChunks returns total number of chunks from storage file header
 func (s *Storage) GetNumChunks() int {
 	return int(s.header.NumChunks)
 }
 
+// GetChunkDataSize returns actual data size of one chunk
 func (s *Storage) GetChunkDataSize() int {
 	return int(s.header.ChunkSize) - chunkHeaderSize
 }
 
+// IsFull returns whether or not the storage is full
 func (s *Storage) IsFull() bool {
 	s.locker.RLock()
 	defer s.locker.RUnlock()
