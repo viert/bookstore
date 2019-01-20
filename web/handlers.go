@@ -17,7 +17,8 @@ type infoResponse struct {
 	ChunkSize     int    `json:"chunk_size"`
 	ChunkDataSize int    `json:"chunk_data_size"`
 	NumChunks     int    `json:"num_chunks"`
-	ServerType    string
+	ServerType    string `json:"server_type"`
+	IsFull        bool   `json:"is_full"`
 }
 
 type incomingData struct {
@@ -40,6 +41,7 @@ func appInfo(r *http.Request, s *Server) (interface{}, error) {
 		ChunkDataSize: s.storage.GetChunkDataSize(),
 		NumChunks:     s.storage.GetNumChunks(),
 		ServerType:    stype,
+		IsFull:        s.storage.IsFull(),
 	}, nil
 }
 

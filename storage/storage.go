@@ -13,7 +13,7 @@ import (
 
 const (
 	// MinChunkSize holds the minimum size of a data chunk (excluding header)
-	MinChunkSize = 1024
+	MinChunkSize = 64
 	// MaxChunkSize holds the maximum size of a data chunk (excluding header)
 	MaxChunkSize = 65536
 	// MaxNumChunks holds the maximum number of chunks (~132Gb for 1024k-chunk)
@@ -119,26 +119,29 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 	var bytesToWrite int
 	var err error
 
-	freeChunk := idx
-	maxChunkDataSize := int(s.header.ChunkSize) - chunkHeaderSize
+	currChunk := idx
+	maxChunkDataSize := s.GetChunkDataSize()
 	bytesLeft := buf.Len()
 
 	dataBuffer := buf.Bytes()
 	dataBufferIdx := 0
 
 	for bytesLeft > 0 {
-		if freeChunk >= int(s.header.NumChunks) {
+		log.Debugf("current chunk idx=%d", currChunk)
+		if currChunk >= int(s.header.NumChunks) {
 			return -1, fmt.Errorf("storage is full")
 		}
-		pos := s.getChunkPosition(freeChunk)
+		pos := s.getChunkPosition(currChunk)
 		if pos < 0 {
 			return -1, fmt.Errorf("index out of bounds")
 		}
 
 		if bytesLeft > maxChunkDataSize {
+			log.Debugf("Data size (%d) is greater than max chunk data size (%d)",
+				bytesLeft, maxChunkDataSize)
 			header = chunkHeader{
 				DataSize: int32(maxChunkDataSize),
-				Next:     int32(freeChunk + 1),
+				Next:     int32(currChunk + 1),
 			}
 			bytesToWrite = maxChunkDataSize
 		} else {
@@ -155,20 +158,22 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 		binary.Write(&headerBuffer, binaryLayout, &header)
 
 		// writing header buffer contents at proper position in backend
-		_, err = s.backend.WriteAt(headerBuffer.Bytes(), int64(pos))
+		n, err := s.backend.WriteAt(headerBuffer.Bytes(), int64(pos))
 		if err != nil {
 			return -1, err
 		}
+		log.Debugf("wrote %d bytes of chunk header at %d", n, pos)
 
 		// writing bytesToWrite bytes of actual data right after the header
-		_, err = s.backend.WriteAt(dataBuffer[dataBufferIdx:dataBufferIdx+bytesToWrite],
+		n, err = s.backend.WriteAt(dataBuffer[dataBufferIdx:dataBufferIdx+bytesToWrite],
 			int64(pos+chunkHeaderSize))
 		if err != nil {
 			return -1, err
 		}
+		log.Debugf("wrote %d bytes of data at %d", n, pos)
 
 		dataBufferIdx += bytesToWrite
-		freeChunk++
+		currChunk++
 	}
 
 	if callback != nil {
@@ -180,9 +185,10 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 		}
 	}
 
-	s.header.FreeChunkIdx = int32(freeChunk)
+	s.header.FreeChunkIdx = int32(currChunk)
 	err = s.writeHeader()
 	if err != nil {
+		log.Errorf("error writing storage header: %s", err)
 		return -1, err
 	}
 
@@ -192,28 +198,40 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 
 // WriteTo writes data into chunks starting from given idx
 func (s *Storage) WriteTo(data []byte, idx int, callback ReplicationCallback) (int, error) {
+	log.Debugf("data size is %d", len(data))
 	buf, err := zip(data)
 	if err != nil {
 		log.Errorf("error compressing data: %s", err)
 		return -1, err
 	}
+	log.Debugf("%d bytes of zipped data to store", buf.Len())
 	s.locker.Lock()
 	defer s.locker.Unlock()
-	return s.writeTo(buf, idx, callback)
+	idx, err = s.writeTo(buf, idx, callback)
+	if err != nil {
+		log.Errorf("error writing data to storage: %s", err)
+	}
+	return idx, err
 }
 
 // Write writes data into free chunks of storage
 // and returns index of the starting chunk
 func (s *Storage) Write(data []byte, callback ReplicationCallback) (int, error) {
+	log.Debugf("data size is %d", len(data))
 	buf, err := zip(data)
 	if err != nil {
 		log.Errorf("error compressing data: %s", err)
 		return -1, err
 	}
+	log.Debugf("%d bytes of zipped data to store", buf.Len())
 	s.locker.Lock()
 	defer s.locker.Unlock()
 	idx := int(s.header.FreeChunkIdx)
-	return s.writeTo(buf, idx, callback)
+	idx, err = s.writeTo(buf, idx, callback)
+	if err != nil {
+		log.Errorf("error writing data to storage: %s", err)
+	}
+	return idx, err
 }
 
 func (s *Storage) readRaw(idx int) (*bytes.Buffer, error) {
@@ -286,4 +304,10 @@ func (s *Storage) GetNumChunks() int {
 
 func (s *Storage) GetChunkDataSize() int {
 	return int(s.header.ChunkSize) - chunkHeaderSize
+}
+
+func (s *Storage) IsFull() bool {
+	s.locker.RLock()
+	defer s.locker.RUnlock()
+	return s.header.FreeChunkIdx >= s.header.NumChunks
 }
