@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"sync"
+
+	logging "github.com/op/go-logging"
 )
 
 const (
@@ -18,6 +20,10 @@ const (
 	MaxNumChunks = 0x8000000
 
 	storageVersion = 1
+)
+
+var (
+	log = logging.MustGetLogger("bookstore")
 )
 
 // Storage is the main type representing the bookstore storage
@@ -38,6 +44,7 @@ func Open(backend Backend) (*Storage, error) {
 	s.backend = backend
 	err := s.readHeader()
 	if err != nil {
+		log.Errorf("error reading storage header: %s", err)
 		return nil, err
 	}
 	return s, nil
@@ -184,14 +191,15 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 }
 
 // WriteTo writes data into chunks starting from given idx
-func (s *Storage) WriteTo(data []byte, idx int) (int, error) {
+func (s *Storage) WriteTo(data []byte, idx int, callback ReplicationCallback) (int, error) {
 	buf, err := zip(data)
 	if err != nil {
+		log.Errorf("error compressing data: %s", err)
 		return -1, err
 	}
 	s.locker.Lock()
 	defer s.locker.Unlock()
-	return s.writeTo(buf, idx, nil)
+	return s.writeTo(buf, idx, callback)
 }
 
 // Write writes data into free chunks of storage
@@ -199,6 +207,7 @@ func (s *Storage) WriteTo(data []byte, idx int) (int, error) {
 func (s *Storage) Write(data []byte, callback ReplicationCallback) (int, error) {
 	buf, err := zip(data)
 	if err != nil {
+		log.Errorf("error compressing data: %s", err)
 		return -1, err
 	}
 	s.locker.Lock()
@@ -265,4 +274,16 @@ func (s *Storage) Read(idx int) ([]byte, error) {
 // GetID returns storage ID from storage file header
 func (s *Storage) GetID() uint64 {
 	return s.header.StorageID
+}
+
+func (s *Storage) GetChunkSize() int {
+	return int(s.header.ChunkSize)
+}
+
+func (s *Storage) GetNumChunks() int {
+	return int(s.header.NumChunks)
+}
+
+func (s *Storage) GetChunkDataSize() int {
+	return int(s.header.ChunkSize) - chunkHeaderSize
 }

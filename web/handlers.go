@@ -12,7 +12,12 @@ import (
 )
 
 type infoResponse struct {
-	AppName string `json:"app_name"`
+	AppName       string `json:"app_name"`
+	StorageID     uint64 `json:"storage_id"`
+	ChunkSize     int    `json:"chunk_size"`
+	ChunkDataSize int    `json:"chunk_data_size"`
+	NumChunks     int    `json:"num_chunks"`
+	ServerType    string
 }
 
 type incomingData struct {
@@ -24,7 +29,18 @@ type writeDataResponse struct {
 }
 
 func appInfo(r *http.Request, s *Server) (interface{}, error) {
-	return &infoResponse{AppName: "bookstore"}, nil
+	stype := "replica"
+	if s.role == roleMaster {
+		stype = "master"
+	}
+	return &infoResponse{
+		AppName:       "bookstore",
+		StorageID:     s.storage.GetID(),
+		ChunkSize:     s.storage.GetChunkSize(),
+		ChunkDataSize: s.storage.GetChunkDataSize(),
+		NumChunks:     s.storage.GetNumChunks(),
+		ServerType:    stype,
+	}, nil
 }
 
 type DataItem struct {
@@ -109,7 +125,13 @@ func appendData(r *http.Request, s *Server) (interface{}, error) {
 		return nil, err
 	}
 
-	idx, err := s.storage.Write([]byte(input.Data), func(idx int) error { return nil })
+	idx, err := s.storage.Write([]byte(input.Data), func(idx int) error {
+		if !s.replicate {
+			return nil
+		}
+		return s.doReplication(idx, input)
+	})
+
 	if err != nil {
 		return nil, &httpError{
 			msg:  fmt.Sprintf("error writing data to storage: %s", err),
@@ -136,7 +158,13 @@ func setData(r *http.Request, s *Server) (interface{}, error) {
 		return nil, err
 	}
 
-	_, err = s.storage.WriteTo([]byte(input.Data), int(idx))
+	_, err = s.storage.WriteTo([]byte(input.Data), int(idx), func(idx int) error {
+		if !s.replicate {
+			return nil
+		}
+		return s.doReplication(idx, input)
+	})
+
 	if err != nil {
 		return nil, &httpError{
 			msg:  fmt.Sprintf("error writing data to storage: %s", err),

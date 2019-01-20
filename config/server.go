@@ -3,16 +3,24 @@ package config
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/viert/properties"
 )
 
+const (
+	defaultReplicationTimeout = 250 // ms
+	defaultLogFileName        = "/var/log/bookstore.log"
+)
+
 // ServerCfg represents a server config
 type ServerCfg struct {
-	Bind            string
-	IsMaster        bool
-	ReplicateTo     string
-	StorageFileName string
+	Bind               string
+	IsMaster           bool
+	ReplicateTo        string
+	ReplicationTimeout time.Duration
+	StorageFileName    string
+	LogFileName        string
 }
 
 // ReadServerConfig reads and returns a bookstore config
@@ -45,6 +53,17 @@ func ReadServerConfig(r io.Reader) (*ServerCfg, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error reading replica.host: %s", err)
 		}
+
+		timeout, err := p.GetInt("replica.timeout")
+		if err != nil {
+			timeout = defaultReplicationTimeout
+		}
+		cfg.ReplicationTimeout = time.Duration(timeout) * time.Millisecond
+	}
+
+	cfg.LogFileName, err = p.GetString("main.log")
+	if err != nil {
+		cfg.LogFileName = defaultLogFileName
 	}
 
 	return cfg, nil

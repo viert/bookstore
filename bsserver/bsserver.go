@@ -7,6 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/op/go-logging"
+
 	"github.com/viert/bookstore/storage"
 
 	"github.com/viert/bookstore/config"
@@ -16,6 +18,20 @@ import (
 const (
 	defaultConfigFilename = "/etc/bsserver.cfg"
 )
+
+func configureLogging(filename string) (*os.File, error) {
+	lf, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, err
+	}
+	backend := logging.NewLogBackend(lf, "", 0)
+	format := logging.MustStringFormatter(
+		`[%{time:2006-01-02 15:04:05.000}] %{level:5s} %{message}`,
+	)
+	backendFormatter := logging.NewBackendFormatter(backend, format)
+	logging.SetBackend(backendFormatter)
+	return lf, nil
+}
 
 func main() {
 	var configFilename string
@@ -37,12 +53,13 @@ func main() {
 		log.Fatalf("error reading config: %s", err)
 	}
 
-	storageFlags := os.O_RDONLY
-	if cfg.IsMaster {
-		storageFlags = os.O_RDWR
+	lf, err := configureLogging(cfg.LogFileName)
+	if err != nil {
+		log.Fatalf("error opening logfile: %s", err)
 	}
+	defer lf.Close()
 
-	storageFile, err := os.OpenFile(cfg.StorageFileName, storageFlags, 0644)
+	storageFile, err := os.OpenFile(cfg.StorageFileName, os.O_RDWR, 0644)
 	if err != nil {
 		log.Fatalf("error opening storage file: %s", err)
 	}
@@ -52,8 +69,10 @@ func main() {
 		log.Fatalf("error opening storage: %s", err)
 	}
 
-	srv := web.NewServer(storage, cfg).Start()
-	log.Println("server started")
+	srv, err := web.NewServer(storage, cfg).Start()
+	if err != nil {
+		log.Fatalf("error starting server: %s", err)
+	}
 
 	sigs := make(chan os.Signal)
 	signal.Notify(sigs, syscall.SIGINT)
