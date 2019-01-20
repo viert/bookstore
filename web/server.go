@@ -99,6 +99,8 @@ func (s *Server) checkReplication() error {
 		return fmt.Errorf("insufficient replica storage size")
 	}
 
+	log.Debugf("Local Storage ID: %d", s.storage.GetID())
+	log.Debugf("Replica Storage ID: %d", info.StorageID)
 	if info.StorageID != s.storage.GetID() {
 		return fmt.Errorf("master and replica's storage IDs don't match")
 	}
