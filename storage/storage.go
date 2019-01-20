@@ -38,6 +38,10 @@ type Storage struct {
 // the local commit must depend on the result of replication
 type ReplicationCallback func(idx int) error
 
+// IterationCallback is called with every item in storage
+// when using Iter() method
+type IterationCallback func(idx int, data []byte)
+
 // Open initializes a Storage instance from a given backend (typically a rw-opened file)
 func Open(backend Backend) (*Storage, error) {
 	s := new(Storage)
@@ -234,18 +238,20 @@ func (s *Storage) Write(data []byte, callback ReplicationCallback) (int, error) 
 	return idx, err
 }
 
-func (s *Storage) readRaw(idx int) (*bytes.Buffer, error) {
+func (s *Storage) readRaw(idx int) (*bytes.Buffer, int, error) {
 	var outBuffer bytes.Buffer
 	var header chunkHeader
 	var err error
+	var chunkCount = 0
 	headerBytes := make([]byte, chunkHeaderSize)
 
 	s.locker.RLock()
 	defer s.locker.RUnlock()
 
 	for {
+		chunkCount++
 		if idx >= int(s.header.FreeChunkIdx) || idx < 0 {
-			return nil, fmt.Errorf("index out of bounds")
+			return nil, 0, fmt.Errorf("index out of bounds")
 		}
 
 		pos := s.getChunkPosition(idx)
@@ -253,23 +259,23 @@ func (s *Storage) readRaw(idx int) (*bytes.Buffer, error) {
 		// reading chunk header
 		_, err = s.backend.ReadAt(headerBytes, int64(pos))
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		headerBuffer := bytes.NewBuffer(headerBytes)
 		err = binary.Read(headerBuffer, binaryLayout, &header)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		// reading chunk data
 		dataBytes := make([]byte, header.DataSize)
 		_, err = s.backend.ReadAt(dataBytes, int64(pos+chunkHeaderSize))
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		_, err = outBuffer.Write(dataBytes)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		if header.Next < 0 {
@@ -278,11 +284,11 @@ func (s *Storage) readRaw(idx int) (*bytes.Buffer, error) {
 		idx = int(header.Next)
 	}
 
-	return &outBuffer, nil
+	return &outBuffer, chunkCount, nil
 }
 
 func (s *Storage) Read(idx int) ([]byte, error) {
-	buf, err := s.readRaw(idx)
+	buf, _, err := s.readRaw(idx)
 	if err != nil {
 		return nil, err
 	}
@@ -314,4 +320,27 @@ func (s *Storage) IsFull() bool {
 	s.locker.RLock()
 	defer s.locker.RUnlock()
 	return s.header.FreeChunkIdx >= s.header.NumChunks
+}
+
+// Iter iterates over items calling callback with each item
+// it comes across
+func (s *Storage) Iter(callback IterationCallback) error {
+	s.locker.RLock()
+	defer s.locker.RUnlock()
+
+	idx := 0
+	for idx < int(s.header.FreeChunkIdx) {
+		buf, length, err := s.readRaw(idx)
+		if err != nil {
+			return err
+		}
+
+		data, err := unzip(buf)
+		if err != nil {
+			return err
+		}
+		callback(idx, data)
+		idx += length
+	}
+	return nil
 }
