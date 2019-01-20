@@ -23,6 +23,19 @@ type ServerCfg struct {
 	LogFileName        string
 }
 
+type HostPair struct {
+	Master  string
+	Replica string
+}
+
+// RouterCfg represents a router config
+type RouterCfg struct {
+	Bind                   string
+	LogFileName            string
+	PanicOnFaultyInstances bool
+	Upstreams              map[string]HostPair
+}
+
 // ReadServerConfig reads and returns a bookstore config
 // from an io.Reader object
 func ReadServerConfig(r io.Reader) (*ServerCfg, error) {
