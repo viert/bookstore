@@ -9,12 +9,11 @@ import (
 
 	"github.com/viert/bookstore/common"
 	"github.com/viert/bookstore/config"
-	"github.com/viert/bookstore/storage"
-	"github.com/viert/bookstore/web"
+	"github.com/viert/bookstore/router"
 )
 
 const (
-	defaultConfigFilename = "/etc/bsserver.cfg"
+	defaultConfigFilename = "/etc/bsrouter.cfg"
 )
 
 func main() {
@@ -32,7 +31,7 @@ func main() {
 	}
 	defer f.Close()
 
-	cfg, err := config.ReadServerConfig(f)
+	cfg, err := config.ReadRouterConfig(f)
 	if err != nil {
 		log.Fatalf("error reading config: %s", err)
 	}
@@ -43,19 +42,10 @@ func main() {
 	}
 	defer lf.Close()
 
-	storageFile, err := os.OpenFile(cfg.StorageFileName, os.O_RDWR, 0644)
+	srv := router.NewServer(cfg)
+	err = srv.Start()
 	if err != nil {
-		log.Fatalf("error opening storage file: %s", err)
-	}
-
-	storage, err := storage.Open(storageFile)
-	if err != nil {
-		log.Fatalf("error opening storage: %s", err)
-	}
-
-	srv, err := web.NewServer(storage, cfg).Start()
-	if err != nil {
-		log.Fatalf("error starting server: %s", err)
+		log.Fatalf("error starting router server: %s", err)
 	}
 
 	sigs := make(chan os.Signal)
@@ -63,6 +53,5 @@ func main() {
 	defer signal.Reset()
 
 	_ = <-sigs
-	srv.Shutdown(nil)
-
+	srv.Stop()
 }

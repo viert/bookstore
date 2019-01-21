@@ -76,7 +76,7 @@ func (s *Server) checkReplication() error {
 	if err != nil {
 		return fmt.Errorf("error reading response from replica: %s", err)
 	}
-	var info infoResponse
+	var info InfoResponse
 	err = json.Unmarshal(content, &info)
 	if err != nil {
 		return fmt.Errorf("error unmarshalling json from replica: %s", err)
@@ -99,8 +99,8 @@ func (s *Server) checkReplication() error {
 		return fmt.Errorf("insufficient replica storage size")
 	}
 
-	log.Debugf("Local Storage ID: %d", s.storage.GetID())
-	log.Debugf("Replica Storage ID: %d", info.StorageID)
+	log.Infof("Local StorageID: %d", s.storage.GetID())
+	log.Infof("Replica StorageID: %d", info.StorageID)
 	if info.StorageID != s.storage.GetID() {
 		return fmt.Errorf("master and replica's storage IDs don't match")
 	}

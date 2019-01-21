@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type infoResponse struct {
+type InfoResponse struct {
 	AppName       string `json:"app_name"`
 	StorageID     uint64 `json:"storage_id"`
 	ChunkSize     int    `json:"chunk_size"`
@@ -34,7 +34,7 @@ func appInfo(r *http.Request, s *Server) (interface{}, error) {
 	if s.role == roleMaster {
 		stype = "master"
 	}
-	return &infoResponse{
+	return &InfoResponse{
 		AppName:       "bookstore",
 		StorageID:     s.storage.GetID(),
 		ChunkSize:     s.storage.GetChunkSize(),
