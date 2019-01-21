@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// InfoResponse is a json-marked-up structure for info handler
 type InfoResponse struct {
 	AppName       string `json:"app_name"`
 	StorageID     uint64 `json:"storage_id"`
@@ -21,11 +22,12 @@ type InfoResponse struct {
 	IsFull        bool   `json:"is_full"`
 }
 
-type incomingData struct {
+// IncomingData is a json-marked-up structure for incoming data
+type IncomingData struct {
 	Data string `json:"data"`
 }
 
-type writeDataResponse struct {
+type WriteDataResponse struct {
 	ID int `json:"id"`
 }
 
@@ -85,7 +87,7 @@ func getData(r *http.Request, s *Server) (interface{}, error) {
 	return dlr, nil
 }
 
-func getIncomingData(r *http.Request) (*incomingData, error) {
+func getIncomingData(r *http.Request) (*IncomingData, error) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
 		return nil, &httpError{
@@ -102,7 +104,7 @@ func getIncomingData(r *http.Request) (*incomingData, error) {
 		}
 	}
 
-	var input incomingData
+	var input IncomingData
 	err = json.Unmarshal(body, &input)
 	if err != nil {
 		return nil, &httpError{
@@ -141,7 +143,7 @@ func appendData(r *http.Request, s *Server) (interface{}, error) {
 		}
 	}
 
-	return &writeDataResponse{ID: idx}, nil
+	return &WriteDataResponse{ID: idx}, nil
 }
 
 func setData(r *http.Request, s *Server) (interface{}, error) {
@@ -174,6 +176,6 @@ func setData(r *http.Request, s *Server) (interface{}, error) {
 		}
 	}
 
-	return &writeDataResponse{ID: int(idx)}, nil
+	return &WriteDataResponse{ID: int(idx)}, nil
 
 }

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -37,6 +39,8 @@ type Server struct {
 	storageTimeout time.Duration
 	srv            *http.Server
 	pingerStop     chan bool
+	readerLock     sync.RWMutex
+	writerLock     sync.RWMutex
 }
 
 var (
@@ -140,19 +144,25 @@ func (s *Server) pingUpstreams() {
 				if err != nil {
 					if w.isAlive {
 						log.Infof("writer %d (host=%s) becomes dead due to ping error: %s", iid, w.host, err)
+						s.writerLock.Lock()
 						w.isAlive = false
+						s.writerLock.Unlock()
 					}
 				} else {
 					newAlive := !resp.IsFull
 					if newAlive {
 						if newAlive != w.isAlive {
 							log.Infof("writer %d (host=%s) becomes alive", iid, w.host)
+							s.writerLock.Lock()
 							w.isAlive = newAlive
+							s.writerLock.Unlock()
 						}
 					} else {
 						if newAlive != w.isAlive {
 							log.Infof("writer %d (host=%s) is full, thus marked as dead", iid, w.host)
+							s.writerLock.Lock()
 							w.isAlive = newAlive
+							s.writerLock.Unlock()
 						}
 					}
 				}
@@ -164,12 +174,16 @@ func (s *Server) pingUpstreams() {
 					if err != nil {
 						if r.isAlive {
 							log.Infof("reader %d (host=%s) becomes dead due to ping error: %s", iid, r.host, err)
+							s.readerLock.Lock()
 							r.isAlive = false
+							s.readerLock.Unlock()
 						}
 					} else {
 						if !r.isAlive {
 							log.Infof("reader %d (host=%s) becomes alive", iid, r.host)
+							s.readerLock.Lock()
 							r.isAlive = true
+							s.readerLock.Unlock()
 						}
 					}
 				}
@@ -195,14 +209,15 @@ func (s *Server) Start() error {
 	}
 
 	r := mux.NewRouter()
-	r.HandleFunc("/put", putData)
-	r.HandleFunc("/get/{instanceID}/{itemID}", getData)
+	r.HandleFunc("/put", s.putData).Methods("POST")
+	r.HandleFunc("/get/{instanceID}/{itemID}", s.getData).Methods("GET")
 
 	s.srv = &http.Server{
 		Addr:    s.bind,
 		Handler: r,
 	}
 
+	rand.Seed(time.Now().UnixNano())
 	go s.pingUpstreams()
 
 	go func() {

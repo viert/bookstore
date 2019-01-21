@@ -146,7 +146,7 @@ func (s *Server) Start() (*http.Server, error) {
 	return srv, nil
 }
 
-func (s *Server) doReplication(idx int, data *incomingData) error {
+func (s *Server) doReplication(idx int, data *IncomingData) error {
 
 	jd, err := json.Marshal(data)
 	if err != nil {
