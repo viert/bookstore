@@ -1,18 +1,35 @@
-all: bsserver bsrouter bscreate
+BSSERVER_SRC =  exe/bsserver/bsserver.go \
+				web/*.go \
+				storage/*.go \
+				config/server.go \
+				common/*.go
 
-bsserver:
+BSROUTER_SRC =	exe/bsrouter/bsrouter.go \
+				router/*.go \
+				storage/*.go \
+				config/router.go \
+				common/*.go
+
+BSCTL_SRC = exe/bsctl/*.go \
+			storage/*.go
+
+all: bsserver bsrouter bsctl
+
+bsserver: $(BSSERVER_SRC)
 	go build exe/bsserver/bsserver.go
 
-bsrouter:
+bsrouter: $(BSROUTER_SRC)
 	go build exe/bsrouter/bsrouter.go
 
-bscreate:
-	go build exe/bscreate/bscreate.go
+bsctl: $(BSCTL_SRC)
+	go build exe/bsctl/*.go
 
 deps:
 	go get -u github.com/viert/properties
 	go get -u github.com/op/go-logging
+	go get -u github.com/akamensky/argparse
 
 clean:
 	rm -f bsrouter
 	rm -f bsserver
+	rm -f bsctl

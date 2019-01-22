@@ -1,3 +1,7 @@
 .vscode
 *.bin
 *.log
+
+bsctl
+bsrouter
+bsserver
