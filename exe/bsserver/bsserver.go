@@ -9,8 +9,8 @@ import (
 
 	"github.com/viert/bookstore/common"
 	"github.com/viert/bookstore/config"
+	"github.com/viert/bookstore/server"
 	"github.com/viert/bookstore/storage"
-	"github.com/viert/bookstore/web"
 )
 
 const (
@@ -53,7 +53,7 @@ func main() {
 		log.Fatalf("error opening storage: %s", err)
 	}
 
-	srv, err := web.NewServer(storage, cfg).Start()
+	srv, err := server.NewServer(storage, cfg).Start()
 	if err != nil {
 		log.Fatalf("error starting server: %s", err)
 	}

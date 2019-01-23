@@ -13,7 +13,7 @@ import (
 
 	"github.com/op/go-logging"
 	"github.com/viert/bookstore/config"
-	"github.com/viert/bookstore/web"
+	"github.com/viert/bookstore/server"
 )
 
 type storageInstance struct {
@@ -28,8 +28,8 @@ type upstreamConfig struct {
 	replica    storageInstance
 }
 
-// Server represents router server object
-type Server struct {
+// Router represents router server object
+type Router struct {
 	bind           string
 	upstreams      []*upstreamConfig
 	readers        map[uint64][]*storageInstance
@@ -47,9 +47,9 @@ var (
 	log = logging.MustGetLogger("router")
 )
 
-// NewServer creates and configures a router server with a given config
-func NewServer(cfg *config.RouterCfg) *Server {
-	s := &Server{
+// NewRouter creates and configures a router server with a given config
+func NewRouter(cfg *config.RouterCfg) *Router {
+	r := &Router{
 		bind:           cfg.Bind,
 		upstreams:      make([]*upstreamConfig, 0),
 		panic:          cfg.PanicOnFaultyInstances,
@@ -67,17 +67,17 @@ func NewServer(cfg *config.RouterCfg) *Server {
 			replica:    storageInstance{host: hp.Replica, isAlive: false},
 			instanceID: 0,
 		}
-		s.upstreams = append(s.upstreams, ucfg)
+		r.upstreams = append(r.upstreams, ucfg)
 	}
-	return s
+	return r
 }
 
-func (s *Server) configureUpstreams() (outError error) {
+func (r *Router) configureUpstreams() (outError error) {
 	var si *storageInstance
 
-	for _, ucfg := range s.upstreams {
+	for _, ucfg := range r.upstreams {
 
-		masterInfo, err := s.getAppInfo(&ucfg.master)
+		masterInfo, err := r.getAppInfo(&ucfg.master)
 		if err != nil {
 			log.Errorf("error getting info on %s master (%s): %s", ucfg.name, ucfg.master.host, err)
 			outError = err
@@ -85,7 +85,7 @@ func (s *Server) configureUpstreams() (outError error) {
 			ucfg.instanceID = masterInfo.StorageID
 		}
 
-		replInfo, err := s.getAppInfo(&ucfg.replica)
+		replInfo, err := r.getAppInfo(&ucfg.replica)
 		if err != nil {
 			log.Errorf("error getting info on %s replica (%s): %s", ucfg.name, ucfg.master.host, err)
 			outError = err
@@ -111,118 +111,117 @@ func (s *Server) configureUpstreams() (outError error) {
 		}
 
 		si = &storageInstance{host: ucfg.master.host, isAlive: true}
-		s.writers[ucfg.instanceID] = si
-		log.Infof("Added writer %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.master.host, ucfg.instanceID, ucfg.master.isAlive)
+		r.writers[ucfg.instanceID] = si
+		log.Infof("added writer %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.master.host, ucfg.instanceID, ucfg.master.isAlive)
 
-		if _, found := s.readers[ucfg.instanceID]; found {
+		if _, found := r.readers[ucfg.instanceID]; found {
 			outError = fmt.Errorf("StorageID %d has already been used by another instance, skipping", ucfg.instanceID)
 			log.Error(outError)
 			continue
 		}
 
-		// !! this is another copy of ucfg.master
-		s.readers[ucfg.instanceID] = make([]*storageInstance, 0)
+		r.readers[ucfg.instanceID] = make([]*storageInstance, 0)
 
 		si = &storageInstance{host: ucfg.master.host, isAlive: true}
-		s.readers[ucfg.instanceID] = append(s.readers[ucfg.instanceID], si)
-		log.Infof("Added reader %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.master.host, ucfg.instanceID, ucfg.master.isAlive)
+		r.readers[ucfg.instanceID] = append(r.readers[ucfg.instanceID], si)
+		log.Infof("added reader %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.master.host, ucfg.instanceID, ucfg.master.isAlive)
 
 		si = &storageInstance{host: ucfg.replica.host, isAlive: true}
-		s.readers[ucfg.instanceID] = append(s.readers[ucfg.instanceID], si)
-		log.Infof("Added reader %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.replica.host, ucfg.instanceID, ucfg.replica.isAlive)
+		r.readers[ucfg.instanceID] = append(r.readers[ucfg.instanceID], si)
+		log.Infof("added reader %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.replica.host, ucfg.instanceID, ucfg.replica.isAlive)
 	}
 	return
 }
 
-func (s *Server) pingUpstreams() {
+func (r *Router) pingUpstreams() {
 	for {
-		t := time.After(s.checkInt)
+		t := time.After(r.checkInt)
 		select {
 		case <-t:
-			for iid, w := range s.writers {
-				resp, err := s.getAppInfo(w)
+			for iid, w := range r.writers {
+				resp, err := r.getAppInfo(w)
 				if err != nil {
 					if w.isAlive {
 						log.Infof("writer %d (host=%s) becomes dead due to ping error: %s", iid, w.host, err)
-						s.writerLock.Lock()
+						r.writerLock.Lock()
 						w.isAlive = false
-						s.writerLock.Unlock()
+						r.writerLock.Unlock()
 					}
 				} else {
 					newAlive := !resp.IsFull
 					if newAlive {
 						if newAlive != w.isAlive {
 							log.Infof("writer %d (host=%s) becomes alive", iid, w.host)
-							s.writerLock.Lock()
+							r.writerLock.Lock()
 							w.isAlive = newAlive
-							s.writerLock.Unlock()
+							r.writerLock.Unlock()
 						}
 					} else {
 						if newAlive != w.isAlive {
 							log.Infof("writer %d (host=%s) is full, thus marked as dead", iid, w.host)
-							s.writerLock.Lock()
+							r.writerLock.Lock()
 							w.isAlive = newAlive
-							s.writerLock.Unlock()
+							r.writerLock.Unlock()
 						}
 					}
 				}
 			}
 
-			for iid, rlist := range s.readers {
-				for _, r := range rlist {
-					_, err := s.getAppInfo(r)
+			for iid, rlist := range r.readers {
+				for _, rd := range rlist {
+					_, err := r.getAppInfo(rd)
 					if err != nil {
-						if r.isAlive {
-							log.Infof("reader %d (host=%s) becomes dead due to ping error: %s", iid, r.host, err)
-							s.readerLock.Lock()
-							r.isAlive = false
-							s.readerLock.Unlock()
+						if rd.isAlive {
+							log.Infof("reader %d (host=%s) becomes dead due to ping error: %s", iid, rd.host, err)
+							r.readerLock.Lock()
+							rd.isAlive = false
+							r.readerLock.Unlock()
 						}
 					} else {
-						if !r.isAlive {
-							log.Infof("reader %d (host=%s) becomes alive", iid, r.host)
-							s.readerLock.Lock()
-							r.isAlive = true
-							s.readerLock.Unlock()
+						if !rd.isAlive {
+							log.Infof("reader %d (host=%s) becomes alive", iid, rd.host)
+							r.readerLock.Lock()
+							rd.isAlive = true
+							r.readerLock.Unlock()
 						}
 					}
 				}
 			}
 
-		case <-s.pingerStop:
+		case <-r.pingerStop:
 			break
 		}
 	}
 }
 
 // Start starts the server and background pinger
-func (s *Server) Start() error {
-	err := s.configureUpstreams()
-	if err != nil && s.panic {
+func (r *Router) Start() error {
+	err := r.configureUpstreams()
+	if err != nil && r.panic {
 		return fmt.Errorf("panic due to upstream failure (and panic_on_faulty flag)")
 	}
 
-	if len(s.readers) == 0 || len(s.writers) == 0 {
-		err = fmt.Errorf("not enough instances to work with (%d readers and %d writers)", len(s.readers), len(s.writers))
+	if len(r.readers) == 0 || len(r.writers) == 0 {
+		err = fmt.Errorf("not enough instances to work with (%d readers and %d writers)", len(r.readers), len(r.writers))
 		log.Error(err)
 		return err
 	}
 
-	r := mux.NewRouter()
-	r.HandleFunc("/put", s.putData).Methods("POST")
-	r.HandleFunc("/get/{instanceID}/{itemID}", s.getData).Methods("GET")
+	mr := mux.NewRouter()
+	mr.HandleFunc("/put", r.putData).Methods("POST")
+	mr.HandleFunc("/get/{instanceID}/{itemID}", r.getData).Methods("GET")
 
-	s.srv = &http.Server{
-		Addr:    s.bind,
-		Handler: r,
+	r.srv = &http.Server{
+		Addr:    r.bind,
+		Handler: mr,
 	}
 
 	rand.Seed(time.Now().UnixNano())
-	go s.pingUpstreams()
+	go r.pingUpstreams()
 
 	go func() {
-		log.Infof("server is starting at %s", s.bind)
-		err := s.srv.ListenAndServe()
+		log.Infof("server is starting at %s", r.bind)
+		err := r.srv.ListenAndServe()
 		if err != nil {
 			return
 		}
@@ -233,14 +232,14 @@ func (s *Server) Start() error {
 }
 
 // Stop stops the http server and background jobs
-func (s *Server) Stop() {
-	s.pingerStop <- true
-	s.srv.Shutdown(nil)
+func (r *Router) Stop() {
+	r.pingerStop <- true
+	r.srv.Shutdown(nil)
 }
 
-func (s *Server) getAppInfo(si *storageInstance) (*web.InfoResponse, error) {
+func (r *Router) getAppInfo(si *storageInstance) (*server.InfoResponse, error) {
 	cli := &http.Client{
-		Timeout: s.storageTimeout,
+		Timeout: r.storageTimeout,
 	}
 
 	url := fmt.Sprintf("http://%s/api/v1/info", si.host)
@@ -254,7 +253,7 @@ func (s *Server) getAppInfo(si *storageInstance) (*web.InfoResponse, error) {
 		return nil, err
 	}
 
-	var info web.InfoResponse
+	var info server.InfoResponse
 	err = json.Unmarshal(content, &info)
 	if err != nil {
 		return nil, err

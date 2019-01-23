@@ -42,7 +42,7 @@ func main() {
 	}
 	defer lf.Close()
 
-	srv := router.NewServer(cfg)
+	srv := router.NewRouter(cfg)
 	err = srv.Start()
 	if err != nil {
 		log.Fatalf("error starting router server: %s", err)

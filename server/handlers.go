@@ -1,4 +1,4 @@
-package web
+package server
 
 import (
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/viert/bookstore/common"
 )
 
 // InfoResponse is a json-marked-up structure for info handler
@@ -31,10 +32,10 @@ type WriteDataResponse struct {
 	ID int `json:"id"`
 }
 
-func appInfo(r *http.Request, s *Server) (interface{}, error) {
-	stype := "replica"
+func (s *Server) appInfo(r *http.Request) (interface{}, error) {
+	srvType := "replica"
 	if s.role == roleMaster {
-		stype = "master"
+		srvType = "master"
 	}
 	return &InfoResponse{
 		AppName:       "bookstore",
@@ -42,7 +43,7 @@ func appInfo(r *http.Request, s *Server) (interface{}, error) {
 		ChunkSize:     s.storage.GetChunkSize(),
 		ChunkDataSize: s.storage.GetChunkDataSize(),
 		NumChunks:     s.storage.GetNumChunks(),
-		ServerType:    stype,
+		ServerType:    srvType,
 		IsFull:        s.storage.IsFull(),
 	}, nil
 }
@@ -56,7 +57,7 @@ type DataListResponse struct {
 	Items []*DataItem `json:"items"`
 }
 
-func getData(r *http.Request, s *Server) (interface{}, error) {
+func (s *Server) getData(r *http.Request) (interface{}, error) {
 	vars := mux.Vars(r)
 	tokens := strings.Split(vars["id"], ",")
 
@@ -64,17 +65,17 @@ func getData(r *http.Request, s *Server) (interface{}, error) {
 	for _, token := range tokens {
 		id, err := strconv.ParseInt(token, 10, 32)
 		if err != nil {
-			return nil, &httpError{
-				msg:  fmt.Sprintf("invalid id '%s'", token),
-				code: http.StatusBadRequest,
+			return nil, common.HTTPError{
+				Code:    http.StatusBadRequest,
+				Message: fmt.Sprintf("invalid id '%s'", token),
 			}
 		}
 
 		data, err := s.storage.Read(int(id))
 		if err != nil {
-			return nil, &httpError{
-				msg:  fmt.Sprintf("error reading item at position %d: %s", id, err),
-				code: http.StatusInternalServerError,
+			return nil, common.HTTPError{
+				Message: fmt.Sprintf("error reading item at position %d: %s", id, err),
+				Code:    http.StatusInternalServerError,
 			}
 		}
 
@@ -90,40 +91,40 @@ func getData(r *http.Request, s *Server) (interface{}, error) {
 func getIncomingData(r *http.Request) (*IncomingData, error) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
-		return nil, &httpError{
-			msg:  "this handler accepts JSON data only",
-			code: http.StatusBadRequest,
+		return nil, common.HTTPError{
+			Message: "this handler accepts JSON data only",
+			Code:    http.StatusBadRequest,
 		}
 	}
 
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		return nil, &httpError{
-			msg:  fmt.Sprintf("error reading request body: %s", err),
-			code: http.StatusInternalServerError,
+		return nil, common.HTTPError{
+			Message: fmt.Sprintf("error reading request body: %s", err),
+			Code:    http.StatusInternalServerError,
 		}
 	}
 
 	var input IncomingData
 	err = json.Unmarshal(body, &input)
 	if err != nil {
-		return nil, &httpError{
-			msg:  fmt.Sprintf("error parsing json data: %s", err),
-			code: http.StatusBadRequest,
+		return nil, common.HTTPError{
+			Message: fmt.Sprintf("error parsing json data: %s", err),
+			Code:    http.StatusBadRequest,
 		}
 	}
 
 	if input.Data == "" {
-		return nil, &httpError{
-			msg:  "input data is empty",
-			code: http.StatusBadRequest,
+		return nil, common.HTTPError{
+			Message: "input data is empty",
+			Code:    http.StatusBadRequest,
 		}
 	}
 
 	return &input, nil
 }
 
-func appendData(r *http.Request, s *Server) (interface{}, error) {
+func (s *Server) appendData(r *http.Request) (interface{}, error) {
 	input, err := getIncomingData(r)
 	if err != nil {
 		return nil, err
@@ -137,23 +138,23 @@ func appendData(r *http.Request, s *Server) (interface{}, error) {
 	})
 
 	if err != nil {
-		return nil, &httpError{
-			msg:  fmt.Sprintf("error writing data to storage: %s", err),
-			code: http.StatusInternalServerError,
+		return nil, common.HTTPError{
+			Message: fmt.Sprintf("error writing data to storage: %s", err),
+			Code:    http.StatusInternalServerError,
 		}
 	}
 
 	return &WriteDataResponse{ID: idx}, nil
 }
 
-func setData(r *http.Request, s *Server) (interface{}, error) {
+func (s *Server) setData(r *http.Request) (interface{}, error) {
 	vars := mux.Vars(r)
 
 	idx, err := strconv.ParseInt(vars["id"], 10, 32)
 	if err != nil {
-		return nil, &httpError{
-			msg:  fmt.Sprintf("invalid id '%s'", vars["id"]),
-			code: http.StatusBadRequest,
+		return nil, common.HTTPError{
+			Message: fmt.Sprintf("invalid id '%s'", vars["id"]),
+			Code:    http.StatusBadRequest,
 		}
 	}
 
@@ -170,9 +171,9 @@ func setData(r *http.Request, s *Server) (interface{}, error) {
 	})
 
 	if err != nil {
-		return nil, &httpError{
-			msg:  fmt.Sprintf("error writing data to storage: %s", err),
-			code: http.StatusInternalServerError,
+		return nil, common.HTTPError{
+			Message: fmt.Sprintf("error writing data to storage: %s", err),
+			Code:    http.StatusInternalServerError,
 		}
 	}
 

@@ -1,4 +1,4 @@
-package web
+package server
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/viert/bookstore/common"
 	"github.com/viert/bookstore/config"
 	"github.com/viert/bookstore/storage"
 )
@@ -122,13 +123,14 @@ func (s *Server) Start() (*http.Server, error) {
 
 	log.Info("Creating HTTP router")
 	r := mux.NewRouter()
-	r.HandleFunc("/api/v1/info", s.jsonResponse(appInfo))
-	r.HandleFunc("/api/v1/data/get/{id}", s.jsonResponse(getData)).Methods("GET")
+
+	r.HandleFunc("/api/v1/info", common.JSONResponse(s.appInfo)).Methods("GET")
+	r.HandleFunc("/api/v1/data/get/{id}", common.JSONResponse(s.getData)).Methods("GET")
 
 	if s.role == roleMaster {
-		r.HandleFunc("/api/v1/data/append", s.jsonResponse(appendData)).Methods("POST")
+		r.HandleFunc("/api/v1/data/append", common.JSONResponse(s.appendData)).Methods("POST")
 	} else {
-		r.HandleFunc("/api/v1/data/set/{id}", s.jsonResponse(setData)).Methods("POST")
+		r.HandleFunc("/api/v1/data/set/{id}", common.JSONResponse(s.setData)).Methods("POST")
 	}
 
 	srv := &http.Server{

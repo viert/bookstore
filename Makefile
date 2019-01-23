@@ -1,5 +1,5 @@
 BSSERVER_SRC =  exe/bsserver/bsserver.go \
-				web/*.go \
+				server/*.go \
 				storage/*.go \
 				config/server.go \
 				common/*.go
