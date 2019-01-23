@@ -28,6 +28,7 @@ deps:
 	go get -u github.com/viert/properties
 	go get -u github.com/op/go-logging
 	go get -u github.com/akamensky/argparse
+	go get -u github.com/gorilla/mux
 
 clean:
 	rm -f bsrouter
