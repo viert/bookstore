@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/viert/bookstore/common"
+
 	"github.com/gorilla/mux"
 
 	"github.com/op/go-logging"
@@ -72,12 +74,12 @@ func NewRouter(cfg *config.RouterCfg) *Router {
 	return r
 }
 
-func (r *Router) configureUpstreams() (outError error) {
+func (rt *Router) configureUpstreams() (outError error) {
 	var si *storageInstance
 
-	for _, ucfg := range r.upstreams {
+	for _, ucfg := range rt.upstreams {
 
-		masterInfo, err := r.getAppInfo(&ucfg.master)
+		masterInfo, err := rt.getAppInfo(&ucfg.master)
 		if err != nil {
 			log.Errorf("error getting info on %s master (%s): %s", ucfg.name, ucfg.master.host, err)
 			outError = err
@@ -85,7 +87,7 @@ func (r *Router) configureUpstreams() (outError error) {
 			ucfg.instanceID = masterInfo.StorageID
 		}
 
-		replInfo, err := r.getAppInfo(&ucfg.replica)
+		replInfo, err := rt.getAppInfo(&ucfg.replica)
 		if err != nil {
 			log.Errorf("error getting info on %s replica (%s): %s", ucfg.name, ucfg.master.host, err)
 			outError = err
@@ -111,117 +113,119 @@ func (r *Router) configureUpstreams() (outError error) {
 		}
 
 		si = &storageInstance{host: ucfg.master.host, isAlive: true}
-		r.writers[ucfg.instanceID] = si
+		rt.writers[ucfg.instanceID] = si
 		log.Infof("added writer %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.master.host, ucfg.instanceID, ucfg.master.isAlive)
 
-		if _, found := r.readers[ucfg.instanceID]; found {
+		if _, found := rt.readers[ucfg.instanceID]; found {
 			outError = fmt.Errorf("StorageID %d has already been used by another instance, skipping", ucfg.instanceID)
 			log.Error(outError)
 			continue
 		}
 
-		r.readers[ucfg.instanceID] = make([]*storageInstance, 0)
+		rt.readers[ucfg.instanceID] = make([]*storageInstance, 0)
 
 		si = &storageInstance{host: ucfg.master.host, isAlive: true}
-		r.readers[ucfg.instanceID] = append(r.readers[ucfg.instanceID], si)
+		rt.readers[ucfg.instanceID] = append(rt.readers[ucfg.instanceID], si)
 		log.Infof("added reader %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.master.host, ucfg.instanceID, ucfg.master.isAlive)
 
 		si = &storageInstance{host: ucfg.replica.host, isAlive: true}
-		r.readers[ucfg.instanceID] = append(r.readers[ucfg.instanceID], si)
+		rt.readers[ucfg.instanceID] = append(rt.readers[ucfg.instanceID], si)
 		log.Infof("added reader %s: host=%s storageID=%d isAlive=%v", ucfg.name, ucfg.replica.host, ucfg.instanceID, ucfg.replica.isAlive)
 	}
 	return
 }
 
-func (r *Router) pingUpstreams() {
+func (rt *Router) pingUpstreams() {
 	for {
-		t := time.After(r.checkInt)
+		t := time.After(rt.checkInt)
 		select {
 		case <-t:
-			for iid, w := range r.writers {
-				resp, err := r.getAppInfo(w)
+			for iid, w := range rt.writers {
+				resp, err := rt.getAppInfo(w)
 				if err != nil {
 					if w.isAlive {
 						log.Infof("writer %d (host=%s) becomes dead due to ping error: %s", iid, w.host, err)
-						r.writerLock.Lock()
+						rt.writerLock.Lock()
 						w.isAlive = false
-						r.writerLock.Unlock()
+						rt.writerLock.Unlock()
 					}
 				} else {
 					newAlive := !resp.IsFull
 					if newAlive {
 						if newAlive != w.isAlive {
 							log.Infof("writer %d (host=%s) becomes alive", iid, w.host)
-							r.writerLock.Lock()
+							rt.writerLock.Lock()
 							w.isAlive = newAlive
-							r.writerLock.Unlock()
+							rt.writerLock.Unlock()
 						}
 					} else {
 						if newAlive != w.isAlive {
 							log.Infof("writer %d (host=%s) is full, thus marked as dead", iid, w.host)
-							r.writerLock.Lock()
+							rt.writerLock.Lock()
 							w.isAlive = newAlive
-							r.writerLock.Unlock()
+							rt.writerLock.Unlock()
 						}
 					}
 				}
 			}
 
-			for iid, rlist := range r.readers {
+			for iid, rlist := range rt.readers {
 				for _, rd := range rlist {
-					_, err := r.getAppInfo(rd)
+					_, err := rt.getAppInfo(rd)
 					if err != nil {
 						if rd.isAlive {
 							log.Infof("reader %d (host=%s) becomes dead due to ping error: %s", iid, rd.host, err)
-							r.readerLock.Lock()
+							rt.readerLock.Lock()
 							rd.isAlive = false
-							r.readerLock.Unlock()
+							rt.readerLock.Unlock()
 						}
 					} else {
 						if !rd.isAlive {
 							log.Infof("reader %d (host=%s) becomes alive", iid, rd.host)
-							r.readerLock.Lock()
+							rt.readerLock.Lock()
 							rd.isAlive = true
-							r.readerLock.Unlock()
+							rt.readerLock.Unlock()
 						}
 					}
 				}
 			}
 
-		case <-r.pingerStop:
+		case <-rt.pingerStop:
 			break
 		}
 	}
 }
 
 // Start starts the server and background pinger
-func (r *Router) Start() error {
-	err := r.configureUpstreams()
-	if err != nil && r.panic {
+func (rt *Router) Start() error {
+	var err error
+
+	err = rt.configureUpstreams()
+	if err != nil && rt.panic {
 		return fmt.Errorf("panic due to upstream failure (and panic_on_faulty flag)")
 	}
 
-	if len(r.readers) == 0 || len(r.writers) == 0 {
-		err = fmt.Errorf("not enough instances to work with (%d readers and %d writers)", len(r.readers), len(r.writers))
+	if len(rt.readers) == 0 || len(rt.writers) == 0 {
+		err = fmt.Errorf("not enough instances to work with (%d readers and %d writers)", len(rt.readers), len(rt.writers))
 		log.Error(err)
 		return err
 	}
 
-	mr := mux.NewRouter()
-	mr.HandleFunc("/put", r.putData).Methods("POST")
-	mr.HandleFunc("/get/{instanceID}/{itemID}", r.getData).Methods("GET")
+	r := mux.NewRouter()
+	r.HandleFunc("/put", common.JSONResponse(rt.putData)).Methods("POST")
+	r.HandleFunc("/get/{instanceID}/{itemID}", common.JSONResponse(rt.getData)).Methods("GET")
 
-	r.srv = &http.Server{
-		Addr:    r.bind,
-		Handler: mr,
+	rt.srv = &http.Server{
+		Addr:    rt.bind,
+		Handler: r,
 	}
 
 	rand.Seed(time.Now().UnixNano())
-	go r.pingUpstreams()
+	go rt.pingUpstreams()
 
 	go func() {
-		log.Infof("server is starting at %s", r.bind)
-		err := r.srv.ListenAndServe()
+		log.Infof("server is starting at %s", rt.bind)
+		err = rt.srv.ListenAndServe()
 		if err != nil {
 			return
 		}
@@ -232,14 +236,14 @@ func (r *Router) Start() error {
 }
 
 // Stop stops the http server and background jobs
-func (r *Router) Stop() {
-	r.pingerStop <- true
-	r.srv.Shutdown(nil)
+func (rt *Router) Stop() {
+	rt.pingerStop <- true
+	rt.srv.Shutdown(nil)
 }
 
-func (r *Router) getAppInfo(si *storageInstance) (*server.InfoResponse, error) {
+func (rt *Router) getAppInfo(si *storageInstance) (*server.InfoResponse, error) {
 	cli := &http.Client{
-		Timeout: r.storageTimeout,
+		Timeout: rt.storageTimeout,
 	}
 
 	url := fmt.Sprintf("http://%s/api/v1/info", si.host)
@@ -259,4 +263,80 @@ func (r *Router) getAppInfo(si *storageInstance) (*server.InfoResponse, error) {
 		return nil, err
 	}
 	return &info, nil
+}
+
+func (rt *Router) proxyData(hosts []string, itemID string) (*server.DataListResponse, error) {
+	var responseBody []byte
+	var listResponse server.DataListResponse
+	var err error
+
+	cli := &http.Client{Timeout: rt.storageTimeout}
+	if len(hosts) == 1 {
+		host := hosts[0]
+		url := fmt.Sprintf("http://%s/api/v1/data/get/%s", host, itemID)
+		log.Debugf("getting data from %s", url)
+		resp, err := cli.Get(url)
+		if err != nil {
+			log.Debugf("error getting data from %s: %s", host, err)
+			return nil, common.NewHTTPError(502, "error getting data: %s", err)
+		}
+		responseBody, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Debugf("error reading response body: %s", err)
+			return nil, common.NewHTTPError(500, "error reading response body: %s", err)
+		}
+	} else {
+		for retries := 3; retries > 0; retries-- {
+			idx := rand.Intn(len(hosts))
+			host := hosts[idx]
+			url := fmt.Sprintf("http://%s/api/v1/data/get/%s", host, itemID)
+			log.Debugf("getting data from %s", url)
+			resp, err := cli.Get(url)
+			if err != nil {
+				log.Debugf("error getting data from %s: %s. retries left: %d", host, err, retries-1)
+				continue
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				content, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					log.Debugf("status code %d from %s, body can't be read due to an error: %s. retries left: %d", resp.StatusCode, host, err, retries-1)
+					continue
+				}
+
+				var errData errorResponse
+				err = json.Unmarshal(content, &errData)
+				if err != nil {
+					log.Debugf("status code %d from %s, body can't be unmarshalled due to an error: %s. retries left: %d", resp.StatusCode, host, err, retries-1)
+					continue
+				}
+
+				log.Debugf("error getting data: %s", errData.Error)
+				if resp.StatusCode == http.StatusNotFound {
+					// no need to retry if there's no such item
+					log.Debugf("status code 404 from %s, giving up", host)
+					return nil, common.NewHTTPError(404, errData.Error)
+				}
+				continue
+			}
+
+			responseBody, err = ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Debugf("error reading response body: %s", err)
+				return nil, common.NewHTTPError(500, "error reading response body: %s", err)
+			}
+			break
+		}
+
+		if responseBody == nil {
+			return nil, common.NewHTTPError(502, "can't get data: no more retries left")
+		}
+	}
+
+	err = json.Unmarshal(responseBody, &listResponse)
+	if err != nil {
+		return nil, common.NewHTTPError(500, "error unmarshalling data: %s", err)
+	}
+
+	return &listResponse, nil
 }
