@@ -25,6 +25,7 @@ type errorResponse struct {
 }
 
 func (rt *Router) putData(r *http.Request) (interface{}, error) {
+
 	// Checking incoming data
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
@@ -34,12 +35,19 @@ func (rt *Router) putData(r *http.Request) (interface{}, error) {
 	if err != nil {
 		return nil, common.NewHTTPError(400, "error reading body: %s", err)
 	}
+	// Checking data for consistency
+
+	err = json.Unmarshal(data, &server.IncomingData{})
+	if err != nil {
+		return nil, common.NewHTTPError(400, "invalid input data: %s", err)
+	}
 
 	// Getting available writers
 	type writerDesc struct {
 		host      string
 		storageID uint64
 	}
+
 	rt.writerLock.RLock()
 	availableWriters := make([]writerDesc, 0)
 	for iid, writer := range rt.writers {
@@ -53,6 +61,7 @@ func (rt *Router) putData(r *http.Request) (interface{}, error) {
 	for retries := 3; retries > 0; retries-- {
 		idx := rand.Intn(len(availableWriters))
 		writer := availableWriters[idx]
+
 		url := fmt.Sprintf("http://%s/api/v1/data/append", writer.host)
 		cli := &http.Client{Timeout: rt.storageTimeout}
 		buf := bytes.NewBuffer(data)
