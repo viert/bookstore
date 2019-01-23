@@ -1,12 +1,14 @@
 package storage
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 )
 
 var (
-	shortData = []byte(` Seeker is the interface that wraps the basic Seek method.
+	veryShortData = []byte("hello world")
+	shortData     = []byte(` Seeker is the interface that wraps the basic Seek method.
 Seek sets the offset for the next Read or Write to offset, interpreted according to whence: SeekStart means relative to the start of the file, SeekCurrent means relative to the current offset, and SeekEnd means relative to the end. Seek returns the new offset relative to the start of the file and an error, if any.
 Seeking to an offset before the start of the file is an error. Seeking to any positive offset is legal, but the behavior of subsequent I/O operations on the underlying object is implementation-dependent. `)
 	longData = []byte(` Reader is the interface that wraps the basic Read method.
@@ -142,6 +144,38 @@ func TestReplication(t *testing.T) {
 
 	if err == nil {
 		t.Error(err)
+	}
+}
+
+func TestUncompressed(t *testing.T) {
+	mb := NewMemBackend()
+	CreateStorage(mb, 512, 512, 104)
+	st, err := Open(mb)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// writing very short data
+	_, err = st.Write(veryShortData, replicationSucceeded)
+	if err != nil {
+		t.Error(err)
+	}
+
+	buf, count, gzipped, err := st.readRaw(0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if count != 1 {
+		t.Errorf("size of data in chunks must be 1, got %d instead", count)
+	}
+
+	if gzipped {
+		t.Errorf("gzipped should be false for very short data")
+	}
+
+	if !bytes.Equal(buf.Bytes(), veryShortData) {
+		t.Errorf("raw data should be equal to input data. input is %v, read is %v", veryShortData, buf.Bytes())
 	}
 
 }

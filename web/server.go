@@ -137,6 +137,7 @@ func (s *Server) Start() (*http.Server, error) {
 	}
 
 	go func() {
+		log.Infof("server is starting at %s", s.bind)
 		err := srv.ListenAndServe()
 		if err != nil {
 			return

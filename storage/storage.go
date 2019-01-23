@@ -122,7 +122,7 @@ func unzip(data *bytes.Buffer) ([]byte, error) {
 	return out, nil
 }
 
-func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallback) (int, error) {
+func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallback, gzipped bool) (int, error) {
 	var header chunkHeader
 	var headerBuffer bytes.Buffer
 	var bytesToWrite int
@@ -149,14 +149,16 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 			log.Debugf("Data size (%d) is greater than max chunk data size (%d)",
 				bytesLeft, maxChunkDataSize)
 			header = chunkHeader{
-				DataSize: int32(maxChunkDataSize),
-				Next:     int32(currChunk + 1),
+				DataSize:   int32(maxChunkDataSize),
+				Next:       int32(currChunk + 1),
+				Compressed: gzipped,
 			}
 			bytesToWrite = maxChunkDataSize
 		} else {
 			header = chunkHeader{
-				DataSize: int32(bytesLeft),
-				Next:     -1,
+				DataSize:   int32(bytesLeft),
+				Next:       -1,
+				Compressed: gzipped,
 			}
 			bytesToWrite = bytesLeft
 		}
@@ -207,16 +209,28 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 
 // WriteTo writes data into chunks starting from given idx
 func (s *Storage) WriteTo(data []byte, idx int, callback ReplicationCallback) (int, error) {
-	log.Debugf("data size is %d", len(data))
+	plainDataLength := len(data)
+	log.Debugf("data size is %d", plainDataLength)
 	buf, err := zip(data)
+	gzipped := true
 	if err != nil {
 		log.Errorf("error compressing data: %s", err)
 		return -1, err
 	}
-	log.Debugf("%d bytes of zipped data to store", buf.Len())
+	log.Debugf("compressed data size is %d", buf.Len())
+
+	if plainDataLength < buf.Len() {
+		log.Debug("about to write uncompressed data")
+		buf = bytes.NewBuffer(data)
+		gzipped = false
+	}
 	s.locker.Lock()
 	defer s.locker.Unlock()
-	idx, err = s.writeTo(buf, idx, callback)
+	if idx < 0 {
+		idx = int(s.header.FreeChunkIdx)
+	}
+
+	idx, err = s.writeTo(buf, idx, callback, gzipped)
 	if err != nil {
 		log.Errorf("error writing data to storage: %s", err)
 	}
@@ -226,24 +240,10 @@ func (s *Storage) WriteTo(data []byte, idx int, callback ReplicationCallback) (i
 // Write writes data into free chunks of storage
 // and returns index of the starting chunk
 func (s *Storage) Write(data []byte, callback ReplicationCallback) (int, error) {
-	log.Debugf("data size is %d", len(data))
-	buf, err := zip(data)
-	if err != nil {
-		log.Errorf("error compressing data: %s", err)
-		return -1, err
-	}
-	log.Debugf("%d bytes of zipped data to store", buf.Len())
-	s.locker.Lock()
-	defer s.locker.Unlock()
-	idx := int(s.header.FreeChunkIdx)
-	idx, err = s.writeTo(buf, idx, callback)
-	if err != nil {
-		log.Errorf("error writing data to storage: %s", err)
-	}
-	return idx, err
+	return s.WriteTo(data, -1, callback)
 }
 
-func (s *Storage) readRaw(idx int) (*bytes.Buffer, int, error) {
+func (s *Storage) readRaw(idx int) (*bytes.Buffer, int, bool, error) {
 	var outBuffer bytes.Buffer
 	var header chunkHeader
 	var err error
@@ -256,7 +256,7 @@ func (s *Storage) readRaw(idx int) (*bytes.Buffer, int, error) {
 	for {
 		chunkCount++
 		if idx >= int(s.header.FreeChunkIdx) || idx < 0 {
-			return nil, 0, fmt.Errorf("index out of bounds")
+			return nil, 0, false, fmt.Errorf("index out of bounds")
 		}
 
 		pos := s.getChunkPosition(idx)
@@ -264,23 +264,23 @@ func (s *Storage) readRaw(idx int) (*bytes.Buffer, int, error) {
 		// reading chunk header
 		_, err = s.backend.ReadAt(headerBytes, int64(pos))
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
 		headerBuffer := bytes.NewBuffer(headerBytes)
 		err = binary.Read(headerBuffer, binaryLayout, &header)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
 
 		// reading chunk data
 		dataBytes := make([]byte, header.DataSize)
 		_, err = s.backend.ReadAt(dataBytes, int64(pos+chunkHeaderSize))
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
 		_, err = outBuffer.Write(dataBytes)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
 
 		if header.Next < 0 {
@@ -289,15 +289,22 @@ func (s *Storage) readRaw(idx int) (*bytes.Buffer, int, error) {
 		idx = int(header.Next)
 	}
 
-	return &outBuffer, chunkCount, nil
+	return &outBuffer, chunkCount, header.Compressed, nil
 }
 
 func (s *Storage) Read(idx int) ([]byte, error) {
-	buf, _, err := s.readRaw(idx)
+	log.Debugf("reading item %d", idx)
+	buf, _, gzipped, err := s.readRaw(idx)
 	if err != nil {
 		return nil, err
 	}
-	return unzip(buf)
+
+	if gzipped {
+		log.Debugf("uncompressing item %d", idx)
+		return unzip(buf)
+	}
+	log.Debugf("item %d is not compressed", idx)
+	return buf.Bytes(), nil
 }
 
 // GetID returns storage ID from storage file header
@@ -330,20 +337,26 @@ func (s *Storage) IsFull() bool {
 // Iter iterates over items calling callback with each item
 // it comes across
 func (s *Storage) Iter(callback IterationCallback) error {
+	var data []byte
 	s.locker.RLock()
 	defer s.locker.RUnlock()
 
 	idx := 0
 	for idx < int(s.header.FreeChunkIdx) {
-		buf, length, err := s.readRaw(idx)
+		buf, length, gzipped, err := s.readRaw(idx)
 		if err != nil {
 			return err
 		}
 
-		data, err := unzip(buf)
-		if err != nil {
-			return err
+		if gzipped {
+			data, err = unzip(buf)
+			if err != nil {
+				return err
+			}
+		} else {
+			data = buf.Bytes()
 		}
+
 		err = callback(idx, data)
 		if err != nil {
 			return err

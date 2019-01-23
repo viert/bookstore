@@ -221,6 +221,7 @@ func (s *Server) Start() error {
 	go s.pingUpstreams()
 
 	go func() {
+		log.Infof("server is starting at %s", s.bind)
 		err := s.srv.ListenAndServe()
 		if err != nil {
 			return

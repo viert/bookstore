@@ -14,9 +14,10 @@ type storeHeader struct {
 }
 
 type chunkHeader struct {
-	DataSize int32
-	Next     int32
-	Reserved [24]byte
+	DataSize   int32
+	Next       int32
+	Compressed bool
+	Reserved   [23]byte
 }
 
 // Backend represents an interface of storage backend (typically a file)
