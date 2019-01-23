@@ -20,6 +20,12 @@ func main() {
 	storageID := createCmd.Int("i", "stid",
 		&argparse.Options{Default: 0, Help: "assign storage id (default or zero forces random storage id to be used)"})
 
+	moveCmd := parser.NewCommand("move", "moves data from one storage to another. output storage may not be empty so it's possible to combine data from different storages into one")
+	inputFile := createCmd.File("i", "input", os.O_RDONLY, 0644,
+		&argparse.Options{Required: true, Help: "input storage file"})
+	outputFile := createCmd.File("o", "output", os.O_RDWR, 0644,
+		&argparse.Options{Required: true, Help: "output storage file"})
+
 	err := parser.Parse(os.Args)
 
 	if err != nil {
@@ -28,5 +34,9 @@ func main() {
 
 	if createCmd.Happened() {
 		runCreate(storageFile, *chunkSize, *numChunks, *storageID)
+	}
+
+	if moveCmd.Happened() {
+		runMove(inputFile, outputFile)
 	}
 }

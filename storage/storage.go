@@ -40,7 +40,12 @@ type ReplicationCallback func(idx int) error
 
 // IterationCallback is called with every item in storage
 // when using Iter() method
-type IterationCallback func(idx int, data []byte)
+type IterationCallback func(idx int, data []byte) error
+
+// NopReplicationCallback is a replication callback doing nothing
+func NopReplicationCallback(idx int) error {
+	return nil
+}
 
 // Open initializes a Storage instance from a given backend (typically a rw-opened file)
 func Open(backend Backend) (*Storage, error) {
@@ -339,7 +344,10 @@ func (s *Storage) Iter(callback IterationCallback) error {
 		if err != nil {
 			return err
 		}
-		callback(idx, data)
+		err = callback(idx, data)
+		if err != nil {
+			return err
+		}
 		idx += length
 	}
 	return nil
