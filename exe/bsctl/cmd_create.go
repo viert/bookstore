@@ -44,6 +44,6 @@ func runCreate(f *os.File, chunkSize int, numChunks int, storageID int) {
 	if err != nil {
 		log.Fatalf("error opening storage: %s", err)
 	}
-	fmt.Printf("Storage created.\nFile size:  %d bytes\nStorage ID: %d\n", fi.Size(), st.GetID())
+	fmt.Printf("Storage created: %s\nFile size:  %d bytes\nStorage ID: %d\n", fi.Name(), fi.Size(), st.GetID())
 
 }
