@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	logging "github.com/op/go-logging"
+	"github.com/viert/bookstore/common"
 )
 
 const (
@@ -171,7 +172,7 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 		// writing header buffer contents at proper position in backend
 		n, err := s.backend.WriteAt(headerBuffer.Bytes(), int64(pos))
 		if err != nil {
-			return -1, err
+			return -1, common.NewHTTPError(500, "error writing chunk header: %s", err)
 		}
 		log.Debugf("wrote %d bytes of chunk header at %d", n, pos)
 
@@ -179,7 +180,7 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 		n, err = s.backend.WriteAt(dataBuffer[dataBufferIdx:dataBufferIdx+bytesToWrite],
 			int64(pos+chunkHeaderSize))
 		if err != nil {
-			return -1, err
+			return -1, common.NewHTTPError(500, "error writing chunk data: %s", err)
 		}
 		log.Debugf("wrote %d bytes of data at %d", n, pos)
 
@@ -192,7 +193,7 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 		// replication is kinda atomic. so if it fails, local write
 		// must fail as well
 		if err != nil {
-			return -1, fmt.Errorf("replication error: %s", err)
+			return -1, common.NewHTTPError(500, "replication error: %s", err)
 		}
 	}
 
@@ -200,11 +201,10 @@ func (s *Storage) writeTo(buf *bytes.Buffer, idx int, callback ReplicationCallba
 	err = s.writeHeader()
 	if err != nil {
 		log.Errorf("error writing storage header: %s", err)
-		return -1, err
+		return -1, common.NewHTTPError(500, "error writing storage header: %s", err)
 	}
 
 	return idx, nil
-
 }
 
 // WriteTo writes data into chunks starting from given idx
@@ -215,7 +215,7 @@ func (s *Storage) WriteTo(data []byte, idx int, callback ReplicationCallback) (i
 	gzipped := true
 	if err != nil {
 		log.Errorf("error compressing data: %s", err)
-		return -1, err
+		return -1, common.NewHTTPError(500, "error compressing data: %s", err)
 	}
 	log.Debugf("compressed data size is %d", buf.Len())
 
@@ -256,7 +256,7 @@ func (s *Storage) readRaw(idx int) (*bytes.Buffer, int, bool, error) {
 	for {
 		chunkCount++
 		if idx >= int(s.header.FreeChunkIdx) || idx < 0 {
-			return nil, 0, false, fmt.Errorf("index out of bounds")
+			return nil, 0, false, common.NewHTTPError(404, "index %d out of bounds", idx)
 		}
 
 		pos := s.getChunkPosition(idx)
@@ -264,23 +264,23 @@ func (s *Storage) readRaw(idx int) (*bytes.Buffer, int, bool, error) {
 		// reading chunk header
 		_, err = s.backend.ReadAt(headerBytes, int64(pos))
 		if err != nil {
-			return nil, 0, false, err
+			return nil, 0, false, common.NewHTTPError(500, "error reading chunk header: %s", err)
 		}
 		headerBuffer := bytes.NewBuffer(headerBytes)
 		err = binary.Read(headerBuffer, binaryLayout, &header)
 		if err != nil {
-			return nil, 0, false, err
+			return nil, 0, false, common.NewHTTPError(500, "error parsing chunk header: %s", err)
 		}
 
 		// reading chunk data
 		dataBytes := make([]byte, header.DataSize)
 		_, err = s.backend.ReadAt(dataBytes, int64(pos+chunkHeaderSize))
 		if err != nil {
-			return nil, 0, false, err
+			return nil, 0, false, common.NewHTTPError(500, "error reading chunk data: %s", err)
 		}
 		_, err = outBuffer.Write(dataBytes)
 		if err != nil {
-			return nil, 0, false, err
+			return nil, 0, false, common.NewHTTPError(500, "error writing to buffer: %s", err)
 		}
 
 		if header.Next < 0 {

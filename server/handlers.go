@@ -73,10 +73,8 @@ func (s *Server) getData(r *http.Request) (interface{}, error) {
 
 		data, err := s.storage.Read(int(id))
 		if err != nil {
-			return nil, common.HTTPError{
-				Message: fmt.Sprintf("error reading item at position %d: %s", id, err),
-				Code:    http.StatusInternalServerError,
-			}
+			// storage methods are supposed to return HTTPError
+			return nil, err
 		}
 
 		item := &DataItem{

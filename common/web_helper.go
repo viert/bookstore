@@ -2,6 +2,7 @@ package common
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -26,6 +27,13 @@ type DataHandler func(*http.Request) (interface{}, error)
 
 type httpErrorResponse struct {
 	Error string `json:"error"`
+}
+
+func NewHTTPError(code int, format string, args ...interface{}) HTTPError {
+	return HTTPError{
+		Code:    code,
+		Message: fmt.Sprintf(format, args...),
+	}
 }
 
 // WriteJSONError is a helper to return API errors to a user in JSON format
